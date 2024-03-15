@@ -3903,7 +3903,7 @@ BfAstNode* BfReducer::DoCreateStatement(BfAstNode* node, CreateStmtFlags createS
 			}
 			return returnStmt;
 		}
-		else if (token == BfToken_Delete)
+		else if (token == BfToken_Delete || token == BfToken_Yeet)
 		{
 			auto deleteStmt = mAlloc->Alloc<BfDeleteStatement>();
 			ReplaceNode(node, deleteStmt);
@@ -10326,6 +10326,7 @@ BfGenericConstraintsDeclaration* BfReducer::CreateGenericConstraintsDeclaration(
 				case BfToken_Var:
 				case BfToken_New:
 				case BfToken_Delete:
+				case BfToken_Yeet:
 				case BfToken_Enum:
 				case BfToken_Interface:
 					addToConstraint = true;

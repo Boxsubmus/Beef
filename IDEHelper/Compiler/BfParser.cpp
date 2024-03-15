@@ -3115,6 +3115,10 @@ void BfParser::NextToken(int endIdx, bool outerIsInterpolate, bool disablePrepro
 						else if (SrcPtrHasToken("delete"))
 							mToken = BfToken_Delete;
 						break;
+					case TOKEN_HASH('y', 'e', 'e', 't'):
+						if (SrcPtrHasToken("yeet"))
+							mToken = BfToken_Yeet;
+						break;
 					case TOKEN_HASH('d', 'o', 0, 0):
 						if (SrcPtrHasToken("do"))
 							mToken = BfToken_Do;

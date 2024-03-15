@@ -179,6 +179,8 @@ struct BfVariant
 enum BfToken : uint8
 {
 	BfToken_None,
+
+	// Keywords
 	BfToken_Abstract,
 	BfToken_AlignOf,
 	BfToken_AllocType,
@@ -265,7 +267,9 @@ enum BfToken : uint8
 	BfToken_When,
 	BfToken_Where,
 	BfToken_While,
+	BfToken_Yeet,
 	BfToken_Yield,
+
 	BfToken_AssignEquals,
 	BfToken_CompareEquals,
 	BfToken_CompareStrictEquals,

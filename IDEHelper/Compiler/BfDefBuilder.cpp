@@ -339,7 +339,7 @@ void BfDefBuilder::ParseGenericParams(BfGenericParamsDeclaration* genericParamsD
 					constraintDef->mGenericParamFlags = (BfGenericParamFlags)(constraintDef->mGenericParamFlags | BfGenericParamFlag_New);
 					continue;
 				}
-				else if (name == "delete")
+				else if (name == "delete" || name == "yeet")
 				{
 					constraintDef->mGenericParamFlags = (BfGenericParamFlags)(constraintDef->mGenericParamFlags | BfGenericParamFlag_Delete);
 					continue;

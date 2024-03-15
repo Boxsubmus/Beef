@@ -1384,6 +1384,8 @@ const char* Beefy::BfTokenToString(BfToken token)
 		return "delegate";
 	case BfToken_Delete:
 		return "delete";
+	case BfToken_Yeet:
+		return "yeet";
 	case BfToken_Do:
 		return "do";
 	case BfToken_Else:
