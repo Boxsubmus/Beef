@@ -5372,7 +5372,8 @@ namespace IDE.ui
 
 			String curLineStr = scope String();
 			GetLineText(line, curLineStr);
-			int32 lineEnd = (int32)curLineStr.NumCodePoints;
+			// int32 lineEnd = (int32)curLineStr.NumCodePoints;
+			int32 lineEnd = 0;
 
 			mVirtualCursorPos.ValueRef.mColumn = (.)Math.Min(mVirtualCursorPos.Value.mColumn, Math.Max(virtualEnd, lineEnd));
 		}
