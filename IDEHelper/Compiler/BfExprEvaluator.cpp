@@ -5758,10 +5758,12 @@ BfTypedValue BfExprEvaluator::LookupField(BfAstNode* targetSrc, BfTypedValue tar
 
 					if ((!target.IsStatic()) || (prop->mIsStatic) || ((mBfEvalExprFlags & BfEvalExprFlags_NameOf) != 0))
 					{
+						if (!curCheckType->IsTypeMemberIncluded(prop->mDeclaringType, activeTypeDef, mModule))
+							continue;
+
 						if (!mModule->IsInSpecializedSection())
 						{
-							if ((!curCheckType->IsTypeMemberIncluded(prop->mDeclaringType, activeTypeDef, mModule)) ||
-								(!curCheckType->IsTypeMemberAccessible(prop->mDeclaringType, mModule->GetVisibleProjectSet())))
+							if (!curCheckType->IsTypeMemberAccessible(prop->mDeclaringType, mModule->GetVisibleProjectSet()))
 								continue;
 						}
 
@@ -11879,12 +11881,17 @@ bool BfExprEvaluator::LookupTypeProp(BfTypeOfExpression* typeOfExpr, BfIdentifie
 		_Int32Result((typeInstance != NULL) ? typeInstance->GetInstStride() : type->GetStride());
 	else if (memberName == "UnderlyingType")
 	{
+		bool handled = false;
+
 		auto typeType = mModule->ResolveTypeDef(mModule->mCompiler->mTypeTypeDef);
 		if (type->IsGenericParam())
 		{
 			auto genericParamInstance = mModule->GetGenericParamInstance((BfGenericParamType*)type);
 			if (genericParamInstance->IsEnum())
+			{
+				handled = true;
 				mResult = BfTypedValue(mModule->mBfIRBuilder->GetUndefConstValue(mModule->mBfIRBuilder->MapType(typeType)), typeType);
+			}
 		}
 		else if (type->IsEnum())
 		{
@@ -11893,10 +11900,14 @@ bool BfExprEvaluator::LookupTypeProp(BfTypeOfExpression* typeOfExpr, BfIdentifie
 			auto underlyingType = type->GetUnderlyingType();
 			if (underlyingType != NULL)
 			{
+				handled = true;
 				mModule->AddDependency(underlyingType, mModule->mCurTypeInstance, BfDependencyMap::DependencyFlag_ExprTypeReference);
 				mResult = BfTypedValue(mModule->CreateTypeDataRef(underlyingType), typeType);
 			}
 		}
+
+		if (!handled)
+			mResult = BfTypedValue(mModule->CreateTypeDataRef(mModule->GetPrimitiveType(BfTypeCode_None)), typeType);
 	}
 	else if (memberName == "BitSize")
 	{
@@ -20993,8 +21004,8 @@ void BfExprEvaluator::InitializedSizedArray(BfSizedArrayType* arrayType, BfToken
 					}
 
 					elementValue = mModule->LoadOrAggregateValue(elementValue);
-					if (!elemPtrValue.IsConst())
-						mModule->mBfIRBuilder->CreateAlignedStore(elementValue.mValue, elemPtrValue, checkArrayType->mElementType->mAlign);
+					// Note that elemPtrValue can be a const GEP on a global variable
+					mModule->mBfIRBuilder->CreateAlignedStore(elementValue.mValue, elemPtrValue, checkArrayType->mElementType->mAlign);
 				}
 			}
 
@@ -22555,7 +22566,12 @@ void BfExprEvaluator::PerformUnaryOperation_OnResult(BfExpression* unaryOpExpr, 
 			else if (value.mType->IsFloat())
 				mResult = BfTypedValue(mModule->mBfIRBuilder->CreateNeg(value.mValue), origType);
 			else
+			{
+				ResolveGenericType();
+				if (mResult.mType->IsVar())
+					break;
 				numericFail = true;
+			}
 		}
 		break;
 	case BfUnaryOp_InvertBits:
@@ -23981,8 +23997,6 @@ void BfExprEvaluator::PerformBinaryOperation(BfAstNode* leftExpression, BfAstNod
 					argValues.Init(&sizedArgExprs);
 					ResolveArgValues(argValues, BfResolveArgsFlag_DeferParamEval);
 					rightArg = argValues.mResolvedArgs[0];
-					if (!rightArg.mTypedValue)
-						continue;
 				}
 
 				SizedArray<BfResolvedArg, 2> args;
@@ -24253,8 +24267,8 @@ void BfExprEvaluator::PerformBinaryOperation(BfAstNode* leftExpression, BfAstNod
 						bool works = false;
 						if (opConstraint.mBinaryOp == findBinaryOp)
 						{
-							if ((mModule->CanCast(args[0].mTypedValue, opConstraint.mLeftType)) &&
-								(mModule->CanCast(args[1].mTypedValue, opConstraint.mRightType)))
+							if (((args[0].mTypedValue) && (mModule->CanCast(args[0].mTypedValue, opConstraint.mLeftType))) &&
+								((args[1].mTypedValue) && (mModule->CanCast(args[1].mTypedValue, opConstraint.mRightType))))
 							{
 								works = true;
 							}
@@ -24262,13 +24276,13 @@ void BfExprEvaluator::PerformBinaryOperation(BfAstNode* leftExpression, BfAstNod
 
 						if ((isComparison) && (opConstraint.mBinaryOp == BfBinaryOp_Compare))
 						{
-							if ((mModule->CanCast(args[0].mTypedValue, opConstraint.mLeftType)) &&
-								(mModule->CanCast(args[1].mTypedValue, opConstraint.mRightType)))
+							if (((args[0].mTypedValue) && (mModule->CanCast(args[0].mTypedValue, opConstraint.mLeftType))) &&
+								((args[1].mTypedValue) && (mModule->CanCast(args[1].mTypedValue, opConstraint.mRightType))))
 							{
 								works = true;
 							}
-							else if ((mModule->CanCast(args[0].mTypedValue, opConstraint.mRightType)) &&
-								(mModule->CanCast(args[1].mTypedValue, opConstraint.mLeftType)))
+							else if (((args[0].mTypedValue) && (mModule->CanCast(args[0].mTypedValue, opConstraint.mRightType))) &&
+								((args[1].mTypedValue) && (mModule->CanCast(args[1].mTypedValue, opConstraint.mLeftType))))
 							{
 								works = true;
 							}

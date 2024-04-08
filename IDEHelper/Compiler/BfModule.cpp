@@ -6555,16 +6555,19 @@ BfIRValue BfModule::CreateTypeData(BfType* type, BfCreateTypeDataContext& ctx, b
 							origVTable = typeInstance->mVirtualMethodTable;
 
 						BfMethodInstance* declMethodInstance = entry.mDeclaringMethod;
-						if ((mIsComptimeModule) || (typeInstance->IsTypeMemberAccessible(declMethodInstance->mMethodDef->mDeclaringType, mProject)))
+						if (declMethodInstance != NULL)
 						{
-							// Prepare to reslot...
-							entry.mImplementingMethod = entry.mDeclaringMethod;
-							reslotNames.Add(declMethodInstance->mMethodDef->mName);
-						}
-						else
-						{
-							// Decl isn't accessible, null out entry
-							entry.mImplementingMethod = BfMethodRef();
+							if ((mIsComptimeModule) || (typeInstance->IsTypeMemberAccessible(declMethodInstance->mMethodDef->mDeclaringType, mProject)))
+							{
+								// Prepare to reslot...
+								entry.mImplementingMethod = entry.mDeclaringMethod;
+								reslotNames.Add(declMethodInstance->mMethodDef->mName);
+							}
+							else
+							{
+								// Decl isn't accessible, null out entry
+								entry.mImplementingMethod = BfMethodRef();
+							}
 						}
 					}
 				}
@@ -8269,11 +8272,6 @@ void BfModule::ResolveGenericParamConstraints(BfGenericParamInstance* genericPar
 				}
 				else if (constraintType->IsPrimitiveType())
 				{
-					if (isUnspecialized)
-					{
-						Fail("Primitive constraints are not allowed unless preceded with 'const'", constraintTypeRef);
-						continue;
-					}
 					checkEquality = true;
 				}
 
@@ -8293,11 +8291,6 @@ void BfModule::ResolveGenericParamConstraints(BfGenericParamInstance* genericPar
 				}
 				else if ((!constraintType->IsTypeInstance()) && (!constraintType->IsSizedArray()))
 				{
-					if (isUnspecialized)
-					{
-						Fail(StrFormat("Type '%s' is not allowed as a generic constraint", TypeToString(constraintType).c_str()), constraintTypeRef);
-						continue;
-					}
 					checkEquality = true;
 				}
 
@@ -8397,6 +8390,8 @@ bool BfModule::CheckGenericConstraints(const BfGenericParamSource& genericParamS
 		checkGenericParamFlags = checkGenericParamInst->mGenericParamFlags;
 		if (checkGenericParamInst->mTypeConstraint != NULL)
 			checkArgType = checkGenericParamInst->mTypeConstraint;
+		if (checkGenericParamInst->mGenericParamFlags & BfGenericParamFlag_Var)
+			checkArgType = GetPrimitiveType(BfTypeCode_Var);
 
 // 		if ((checkGenericParamFlags & (BfGenericParamFlag_Struct | BfGenericParamFlag_StructPtr)) != 0)
 // 		{
@@ -8660,6 +8655,7 @@ bool BfModule::CheckGenericConstraints(const BfGenericParamSource& genericParamS
 				convCheckConstraint = ResolveGenericType(convCheckConstraint, NULL, methodGenericArgs, mCurTypeInstance);
 			if (convCheckConstraint == NULL)
 				return false;
+
 			if ((checkArgType->IsMethodRef()) || (checkArgType->IsFunction()))
 			{
 				if (convCheckConstraint->IsDelegate())
@@ -8693,7 +8689,7 @@ bool BfModule::CheckGenericConstraints(const BfGenericParamSource& genericParamS
 				else if ((checkArgType->IsFunction()) && (convCheckConstraint->IsInstanceOf(mCompiler->mFunctionTypeDef)))
 					constraintMatched = true;
 			}
-			else if (CanCast(GetFakeTypedValue(checkArgType), convCheckConstraint))
+			else if ((checkArgType == convCheckConstraint) || (checkArgType->IsVar()) || (TypeIsSubTypeOf(checkArgType->ToTypeInstance(), convCheckConstraint->ToTypeInstance())))
 			{
 				constraintMatched = true;
 			}
@@ -8719,8 +8715,8 @@ bool BfModule::CheckGenericConstraints(const BfGenericParamSource& genericParamS
 
 				if (!constraintMatched)
 				{
-					BfType* wrappedStructType = GetWrappedStructType(origCheckArgType, false);
-					if (CanCast(GetFakeTypedValue(wrappedStructType), convCheckConstraint))
+					BfTypeInstance* wrappedStructType = GetWrappedStructType(origCheckArgType, false);
+					if ((wrappedStructType == convCheckConstraint) || (TypeIsSubTypeOf(wrappedStructType, convCheckConstraint->ToTypeInstance())))
 						constraintMatched = true;
 				}
 			}
@@ -9043,7 +9039,7 @@ BfTypedValue BfModule::CreateValueFromExpression(BfExprEvaluator& exprEvaluator,
 		BP_ZONE("CreateValueFromExpression:CheckStack");
 
 		StackHelper stackHelper;
-		if (!stackHelper.CanStackExpand(64 * 1024))
+		if (!stackHelper.CanStackExpand(128 * 1024))
 		{
 			BfTypedValue result;
 			if (!stackHelper.Execute([&]()
@@ -12002,6 +11998,12 @@ BfIRValue BfModule::ConstantToCurrent(BfConstant* constant, BfIRConstHolder* con
 		else
 		{
 			auto wantTypeInst = wantType->ToTypeInstance();
+			if (wantTypeInst == NULL)
+			{
+				InternalError("BfModule::ConstantToCurrent typeInst error");
+				return BfIRValue();
+			}
+
 			if (wantTypeInst->mBaseType != NULL)
 			{
 				auto baseVal = ConstantToCurrent(constHolder->GetConstant(constArray->mValues[0]), constHolder, wantTypeInst->mBaseType);
@@ -12024,6 +12026,13 @@ BfIRValue BfModule::ConstantToCurrent(BfConstant* constant, BfIRConstHolder* con
 				{
 					if (fieldInstance.mDataIdx < 0)
 						continue;
+
+					if (fieldInstance.mDataIdx >= constArray->mValues.mSize)
+					{
+						InternalError("BfModule::ConstantToCurrent union error");
+						return BfIRValue();
+					}
+
 					auto val = constArray->mValues[fieldInstance.mDataIdx];
 					BfIRValue memberVal = ConstantToCurrent(constHolder->GetConstant(val), constHolder, fieldInstance.mResolvedType);
 					if (fieldInstance.mDataIdx == newVals.mSize)
@@ -12615,6 +12624,8 @@ BfCustomAttributes* BfModule::GetCustomAttributes(BfTypeDef* typeDef)
 		attrTarget = BfAttributeTargets_Interface;
 	else if (typeDef->mTypeCode == BfTypeCode_Struct)
 		attrTarget = BfAttributeTargets_Struct;
+	else if (typeDef->mTypeCode == BfTypeCode_Extension)
+		attrTarget = (BfAttributeTargets)(BfAttributeTargets_Struct | BfAttributeTargets_Class | BfAttributeTargets_Interface | BfAttributeTargets_Enum);
 	else
 		attrTarget = BfAttributeTargets_Class;
 	return GetCustomAttributes(typeDef->mTypeDeclaration->mAttributes, attrTarget);
